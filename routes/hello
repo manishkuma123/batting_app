@@ -1,0 +1,495 @@
+
+// router.post("/pool/:poolId/prediction", auth, async (req, res) => {
+//   try {
+
+//     const userId = req.user._id;
+//     const { poolId } = req.params;
+//     const { prediction } = req.body;
+
+    
+//     if (!prediction) {
+//       return res.status(400).json({
+//         status: "error",
+//         message: "Prediction is required"
+//       });
+//     }
+
+    
+//     const pool = await Pool.findById(poolId).populate("participants.userId", "name email");
+
+//     if (!pool) {
+//       return res.status(404).json({
+//         status: "error",
+//         message: "Pool not found"
+//       });
+//     }
+
+//     if (pool.status === "completed") {
+//       return res.status(400).json({
+//         status: "error",
+//         message: "This pool has already been completed. No more predictions allowed."
+//       });
+//     }
+
+//     if (pool.status === "cancelled") {
+//       return res.status(400).json({
+//         status: "error",
+//         message: "This pool has been cancelled."
+//       });
+//     }
+
+    
+//     const participantIndex = pool.participants.findIndex(
+//       p => p.userId && p.userId._id.toString() === userId.toString()
+//     );
+
+//     if (participantIndex === -1) {
+//       return res.status(403).json({
+//         status: "error",
+//         message: "You are not a participant in this pool"
+//       });
+//     }
+
+//     const participant = pool.participants[participantIndex];
+
+    
+//     if (participant.status !== "accepted") {
+//       return res.status(403).json({
+//         status: "error",
+//         message: `Your participation status is "${participant.status}". Only accepted participants can submit predictions.`
+//       });
+//     }
+
+ 
+//     if (participant.prediction) {
+//       return res.status(400).json({
+//         status: "error",
+//         message: "You have already submitted a prediction for this pool",
+//         data: {
+//           yourPrediction: participant.prediction,
+//           submittedAt: participant.predictionSubmittedAt
+//         }
+//       });
+//     }
+
+
+//     if (!pool.options || !pool.options.includes(prediction)) {
+//       return res.status(400).json({
+//         status: "error",
+//         message: "Invalid prediction. Must be one of the available options",
+//         availableOptions: pool.options || []
+//       });
+//     }
+
+    
+//     pool.participants[participantIndex].prediction = prediction;
+//     pool.participants[participantIndex].predictionSubmittedAt = new Date();
+
+//     await pool.save();
+
+//     // Count total predictions submitted
+//     const totalPredictions = pool.participants.filter(p => p.prediction).length;
+//     const totalParticipants = pool.participants.filter(p => p.status === "accepted").length;
+
+//     res.status(200).json({
+//       status: "success",
+//       message: "Your prediction has been recorded successfully",
+//       data: {
+//         poolId: pool._id,
+//         poolName: pool.poolName,
+//         question: pool.question,
+//         yourPrediction: prediction,
+//         submittedAt: pool.participants[participantIndex].predictionSubmittedAt,
+//         totalPredictions: totalPredictions,
+//         totalParticipants: totalParticipants
+//       }
+//     });
+
+//   } catch (err) {
+//     console.error("Prediction submission error:", err);
+//     res.status(500).json({
+//       status: "error",
+//       message: err.message
+//     });
+//   }
+// });
+// ✅ GET ALL NOTIFICATIONS WITH FULL POOL DETAILS
+router.get("/notifications/details", auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { page = 1, limit = 50, unreadOnly = false, type = null } = req.query;
+
+    // Build query
+    const query = { userId: userId };
+    
+    if (unreadOnly === 'true') {
+      query.isRead = false;
+    }
+    
+    if (type) {
+      query.type = type;
+    }
+
+    // Fetch notifications
+    const notifications = await Notification.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const totalNotifications = await Notification.countDocuments(query);
+    const unreadCount = await Notification.countDocuments({
+      userId: userId,
+      isRead: false
+    });
+
+    // Enrich each notification with full pool details
+    const enrichedNotifications = await Promise.all(
+      notifications.map(async (notification) => {
+        const notifObj = {
+          id: notification._id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data,
+          isRead: notification.isRead,
+          readAt: notification.readAt,
+          createdAt: notification.createdAt
+        };
+
+        // Extract pool ID from notification data
+        const poolId = notification.data?.poolId;
+
+        if (!poolId) {
+          notifObj.pool = null;
+          notifObj.inviter = null;
+          return notifObj;
+        }
+
+        // Fetch full pool details
+        const pool = await Pool.findById(poolId)
+          .populate("createdBy", "name email avatar phone")
+          .populate("participants.userId", "name email avatar phone");
+
+        if (!pool) {
+          notifObj.pool = null;
+          notifObj.inviter = null;
+          notifObj.note = "Pool has been deleted";
+          return notifObj;
+        }
+
+        // Find inviter information
+        let inviterInfo = null;
+        if (notification.data?.inviterId) {
+          const inviter = await User.findById(notification.data.inviterId)
+            .select("name email avatar phone");
+          
+          if (inviter) {
+            inviterInfo = {
+              id: inviter._id,
+              name: inviter.name,
+              email: inviter.email,
+              avatar: inviter.avatar,
+              phone: inviter.phone
+            };
+          }
+        }
+
+        // Get current user's participation status
+        const currentUserParticipant = pool.participants.find(
+          p => p.userId && p.userId._id.toString() === userId.toString()
+        );
+
+        // Count participants
+        const acceptedParticipants = pool.participants.filter(
+          p => p.status === "accepted"
+        );
+        const pendingParticipants = pool.participants.filter(
+          p => p.status === "pending"
+        );
+        const totalPredictions = pool.participants.filter(
+          p => p.prediction && p.status === "accepted"
+        ).length;
+
+        // Get category details
+        let categoryDetails = null;
+        if (pool.category) {
+          const category = await Category.findOne({
+            $or: [
+              { _id: pool.category },
+              { name: pool.category }
+            ]
+          });
+          
+          if (category) {
+            categoryDetails = {
+              id: category._id,
+              name: category.name,
+              icon: category.icon
+            };
+          }
+        }
+
+        // Calculate total pot
+        const totalPot = pool.pointsToJoin * acceptedParticipants.length;
+
+        // Add inviter info
+        notifObj.inviter = inviterInfo;
+
+        // Add full pool information
+        notifObj.pool = {
+          id: pool._id,
+          poolName: pool.poolName,
+          description: pool.description || "",
+          question: pool.question,
+          options: pool.options || [],
+          category: categoryDetails,
+          status: pool.status,
+          rewardSystem: pool.rewardSystem,
+          
+          // Entry & Rewards
+          pointsToJoin: pool.pointsToJoin,
+          totalPot: totalPot,
+          
+          // Podium rewards (if applicable)
+          podiumRewards: pool.rewardSystem === "Podium" ? {
+            winner: pool.winner || 0,
+            runnerUp: pool.runnerUp || 0,
+            secondRunnerUp: pool.secondRunnerUp || 0
+          } : null,
+          
+          // Pool creator info
+          createdBy: {
+            id: pool.createdBy._id,
+            name: pool.createdBy.name,
+            email: pool.createdBy.email,
+            avatar: pool.createdBy.avatar,
+            phone: pool.createdBy.phone
+          },
+          
+          // Participation statistics
+          stats: {
+            totalParticipants: acceptedParticipants.length,
+            pendingInvites: pendingParticipants.length,
+            totalPredictions: totalPredictions,
+            predictionProgress: acceptedParticipants.length > 0 
+              ? Math.round((totalPredictions / acceptedParticipants.length) * 100) 
+              : 0
+          },
+          
+          // Current user's status in this pool
+          yourStatus: {
+            participationStatus: currentUserParticipant?.status || "not_participant",
+            prediction: currentUserParticipant?.prediction || null,
+            predictionSubmittedAt: currentUserParticipant?.predictionSubmittedAt || null,
+            resultStatus: currentUserParticipant?.resultStatus || null,
+            pointsEarned: currentUserParticipant?.pointsEarned || 0,
+            rank: currentUserParticipant?.rank || null,
+            canPredict: currentUserParticipant?.status === "accepted" && !pool.correctPrediction,
+            canRespond: currentUserParticipant?.status === "pending",
+            joinedAt: currentUserParticipant?.joinedAt || null
+          },
+          
+          // Accepted participants list
+          participants: acceptedParticipants.map(p => ({
+            id: p.userId?._id || null,
+            name: p.userId?.name || p.name || "Unknown",
+            email: p.userId?.email || p.email || null,
+            avatar: p.userId?.avatar || null,
+            hasPredicted: !!p.prediction,
+            joinedAt: p.joinedAt || null
+          })),
+          
+          // Pending invitations list
+          pendingInvites: pendingParticipants.map(p => ({
+            name: p.userId?.name || p.name || "Unknown",
+            email: p.userId?.email || p.email || null,
+            avatar: p.userId?.avatar || null
+          })),
+          
+          // Result info (if declared)
+          result: pool.correctPrediction ? {
+            correctPrediction: pool.correctPrediction,
+            declaredAt: pool.resultDeclaredAt,
+            leaderboard: pool.leaderboard || []
+          } : null,
+          
+          // Invite link
+          inviteLink: pool.inviteLink || null,
+          
+          // Timestamps
+          createdAt: pool.createdAt,
+          updatedAt: pool.updatedAt
+        };
+
+        return notifObj;
+      })
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "All notifications with pool details fetched successfully",
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalNotifications / parseInt(limit)),
+        totalNotifications: totalNotifications,
+        limit: parseInt(limit)
+      },
+      unreadCount: unreadCount,
+      data: enrichedNotifications
+    });
+
+  } catch (err) {
+    console.error("Notifications details error:", err);
+    res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+});
+
+// ✅ MARK NOTIFICATION AS READ (Still useful)
+router.patch("/notifications/:notificationId/read", auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { notificationId } = req.params;
+
+    const notification = await Notification.findOne({
+      _id: notificationId,
+      userId: userId
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        status: "error",
+        message: "Notification not found"
+      });
+    }
+
+    notification.isRead = true;
+    notification.readAt = new Date();
+    await notification.save();
+
+    // Get updated unread count
+    const unreadCount = await Notification.countDocuments({
+      userId: userId,
+      isRead: false
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Notification marked as read",
+      data: {
+        id: notification._id,
+        isRead: notification.isRead,
+        readAt: notification.readAt
+      },
+      unreadCount: unreadCount
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+});
+
+// ✅ MARK ALL NOTIFICATIONS AS READ
+router.patch("/notifications/read-all", auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const result = await Notification.updateMany(
+      { userId: userId, isRead: false },
+      { 
+        $set: { 
+          isRead: true, 
+          readAt: new Date() 
+        } 
+      }
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "All notifications marked as read",
+      data: {
+        updatedCount: result.modifiedCount
+      },
+      unreadCount: 0
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+});
+
+// ✅ DELETE NOTIFICATION
+router.delete("/notifications/:notificationId", auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { notificationId } = req.params;
+
+    const notification = await Notification.findOneAndDelete({
+      _id: notificationId,
+      userId: userId
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        status: "error",
+        message: "Notification not found"
+      });
+    }
+
+    // Get updated unread count
+    const unreadCount = await Notification.countDocuments({
+      userId: userId,
+      isRead: false
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Notification deleted successfully",
+      unreadCount: unreadCount
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+});
+
+// ✅ GET UNREAD COUNT ONLY (Lightweight)
+router.get("/notifications/unread-count", auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const unreadCount = await Notification.countDocuments({
+      userId: userId,
+      isRead: false
+    });
+
+    res.status(200).json({
+      status: "success",
+      unreadCount: unreadCount
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+});
+```
+
+## 📋 API Endpoints:
+
+### 1️⃣ **Get All Notifications with Full Pool Details**
+```
+GET /notifications/details
