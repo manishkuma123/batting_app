@@ -21,13 +21,13 @@ const userSchema = new mongoose.Schema({
         required: true
     },
 
-    // total points
+    
     totalPoints: {
         type: Number,
         default: 100
     },
 
-    // notification on/off
+    
     notificationStatus: {
         type: String,
         enum: ["on", "off"],
