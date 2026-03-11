@@ -1,0 +1,9 @@
+1. AI-Powered E-Commerce Recommendation System
+
+What it does: Users browse products; AI suggests products based on user preferences and browsing history.
+
+SQL: Store products, orders, users.
+
+MongoDB: Store AI logs, product metadata, or analytics.
+
+Why it's strong for a portfolio: Combines AI + full-stack + Next.js SSR/SSG, very industry-relevant.
