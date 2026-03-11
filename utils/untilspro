@@ -7,3 +7,62 @@ SQL: Store products, orders, users.
 MongoDB: Store AI logs, product metadata, or analytics.
 
 Why it's strong for a portfolio: Combines AI + full-stack + Next.js SSR/SSG, very industry-relevant.
+
+
+
+
+
+🛍️ Project Name: "Vendly"
+Tagline: The smarter way to buy & sell
+
+Features to Add (Interview-Impressive)
+🔐 Auth & Users
+
+JWT login / register + Google OAuth
+Role system: Buyer / Seller / Admin
+Email verification on signup
+
+🏪 Seller Dashboard
+
+Create & manage your own store/shop page
+Add, edit, delete products with image upload
+View your sales, revenue, orders in a dashboard
+Inventory & stock management
+
+🛒 Buyer Experience
+
+Product listing with search, filters, category tabs
+Product detail page with image gallery
+Add to cart, save to wishlist
+Checkout flow with address input
+
+🤖 AI Feature (interview highlight)
+
+AI product description generator — seller types product name, AI writes the description
+Smart search — natural language search ("cheap running shoes under ₹2000")
+
+📦 Orders & Payments
+
+Order placement & tracking (pending → shipped → delivered)
+Razorpay / Stripe payment integration
+Order history for buyer, order management for seller
+
+⭐ Reviews & Ratings
+
+Buyers can leave star rating + review after purchase
+Average rating shown on product card
+
+🔔 Notifications
+
+Real-time notifications using Socket.io (new order, order shipped)
+
+📊 Admin Panel
+
+Manage all users, products, orders
+Analytics: total sales, top products, new users chart
+
+
+Why This Wins Interviews
+What They SeeWhy It ImpressesBuyer + Seller + Admin rolesShows you understand real-world auth complexityAI description generatorShows AI integration skillsSocket.io notificationsShows real-time knowledgeRazorpay/StripeShows payment gateway experienceMongoDB + Node.js + Next.jsExactly the MERN-style stack most companies use
+
+
